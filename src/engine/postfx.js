@@ -80,6 +80,20 @@ export class RenderPipeline {
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+    // Failsafe: if a shader (e.g. the optional AO chain) fails to link on an
+    // exotic driver, log it and drop the effect instead of showing a black frame.
+    this.aoRendering = false;
+    this.renderer.debug.onShaderError = (gl, program, vs, fs) => {
+      const info = (gl.getProgramInfoLog(program) || '').slice(0, 400);
+      const vlog = (gl.getShaderInfoLog(vs) || '').slice(0, 600);
+      const flog = (gl.getShaderInfoLog(fs) || '').slice(0, 600);
+      console.error('[FIRE ZONE] shader link failed', info, vlog, flog);
+      if (this.aoRendering && this.aoPass) {
+        this.aoPass.enabled = false;
+        console.warn('[FIRE ZONE] GTAO disabled after shader error');
+      }
+    };
+
     this.scene = scene;
     this.camera = camera;
 
@@ -125,6 +139,7 @@ export class RenderPipeline {
       for (const m of this.aoIgnore) {
         if (m && m.visible) { m.visible = false; hidden.push(m); }
       }
+      this.aoRendering = true;
       try {
         aoRender(renderer, writeBuffer, readBuffer, dt, mask);
       } catch (e) {
@@ -133,6 +148,7 @@ export class RenderPipeline {
         this.aoPass.enabled = false;
         console.warn('GTAO disabled:', e && e.message);
       } finally {
+        this.aoRendering = false;
         for (const m of hidden) m.visible = true;
       }
     };

@@ -25,6 +25,9 @@ export class Input {
 
   requestLock() {
     if (!this.pointerLockAvailable || this.locked) return;
+    const now = performance.now();
+    if (now - (this._lockAttempt || 0) < 1500) return; // avoid spamming error logs
+    this._lockAttempt = now;
     try {
       const p = this.canvas.requestPointerLock();
       if (p && p.catch) p.catch(() => {});

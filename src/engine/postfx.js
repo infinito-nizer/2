@@ -79,7 +79,17 @@ export class RenderPipeline {
     this.scene = scene;
     this.camera = camera;
 
-    this.composer = new EffectComposer(this.renderer);
+    // WebGL2 needs EXT_color_buffer_float for HDR render targets; fall back to 8-bit
+    // so integrated GPUs / older phones still get a picture instead of a black screen.
+    const gl = this.renderer.getContext();
+    const hdr = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const target = new THREE.WebGLRenderTarget(size.x || 1, size.y || 1, {
+      type: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType,
+      format: THREE.RGBAFormat,
+      colorSpace: hdr ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace,
+    });
+    this.composer = new EffectComposer(this.renderer, target);
     this.renderPass = new RenderPass(scene, camera);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.42, 0.75, 0.82);
     this.outputPass = new OutputPass();

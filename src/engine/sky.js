@@ -134,14 +134,62 @@ export class Sky {
     scene.add(this.sun);
     scene.add(this.sun.target);
 
-    this.hemi = new THREE.HemisphereLight(0xa9cdf0, 0x4a4034, 0.85);
+    this.hemi = new THREE.HemisphereLight(0xa9cdf0, 0x4a4034, 0.32);
     scene.add(this.hemi);
-    this.fill = new THREE.AmbientLight(0x5a7392, 0.22);
+    this.fill = new THREE.AmbientLight(0x5a7392, 0.06);
     scene.add(this.fill);
+
+    this.buildEnvironment(renderer);
+  }
+
+  /**
+   * Pre-filter the sky dome into a PMREM environment map so every PBR
+   * material picks up believable image-based lighting and reflections.
+   */
+  buildEnvironment(renderer) {
+    const envScene = new THREE.Scene();
+    const mat = this.material.clone();
+    mat.uniforms.uTime.value = 41.0;
+    mat.depthTest = false;
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 24), mat);
+    dome.scale.setScalar(100);
+    envScene.add(dome);
+
+    // warm sand bounce from the ground plane
+    const bounce = new THREE.Mesh(
+      new THREE.CircleGeometry(99, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(0x7d7263).multiplyScalar(0.9) })
+    );
+    bounce.position.y = -4;
+    envScene.add(bounce);
+
+    let pmrem = null;
+    try {
+      pmrem = new THREE.PMREMGenerator(renderer);
+      const rt = pmrem.fromScene(envScene, 0.02, 0.5, 400);
+      this.envMap = rt.texture;
+      this.scene.environment = this.envMap;
+      this.scene.environmentIntensity = 0.72;
+    } catch (e) {
+      this.envMap = null;
+      console.warn('env map unavailable:', e && e.message);
+    }
+    if (pmrem) pmrem.dispose();
+    dome.geometry.dispose();
+    mat.dispose();
+    bounce.geometry.dispose();
+    bounce.material.dispose();
   }
 
   setShadowQuality(size) {
     this.sun.shadow.mapSize.set(size, size);
+    const s = size >= 4096 ? 105 : size >= 2048 ? 135 : 165;
+    const cam = this.sun.shadow.camera;
+    cam.left = -s; cam.right = s; cam.top = s; cam.bottom = -s;
+    cam.updateProjectionMatrix();
+    this.sun.shadow.bias = size >= 4096 ? -0.00028 : -0.0004;
+    this.sun.shadow.normalBias = size >= 4096 ? 0.028 : 0.045;
+    this.sun.shadow.radius = size >= 2048 ? 2.6 : 2.0;
     if (this.sun.shadow.map) {
       this.sun.shadow.map.dispose();
       this.sun.shadow.map = null;

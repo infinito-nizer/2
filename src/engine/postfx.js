@@ -5,13 +5,14 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null },
     uTime: { value: 0 },
     uVignette: { value: 0.72 },
-    uSat: { value: 1.14 },
+    uSat: { value: 1.08 },
     uAber: { value: 0.55 },
     uDamage: { value: 0 },
   },
@@ -36,7 +37,10 @@ const GradeShader = {
 
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(vec3(l), col, uSat);
-      col = (col - 0.5) * 1.045 + 0.5;
+      // gentle S-curve for a filmic, less "flat game" response
+      col = clamp(col, 0.0, 1.0);
+      col = mix(col, col * col * (3.0 - 2.0 * col), 0.16);
+      col = (col - 0.5) * 1.06 + 0.5;
       // warm highlight lift / cool shadow lift (subtle cinematic grade)
       col += vec3(0.012, 0.004, -0.008) * smoothstep(0.55, 1.0, l);
       col += vec3(-0.01, 0.0, 0.016) * (1.0 - smoothstep(0.0, 0.4, l));
@@ -56,9 +60,9 @@ const GradeShader = {
 };
 
 export const QUALITY = {
-  low: { dpr: 1.0, shadow: 1024, bloom: false, smaa: false, exposure: 1.0 },
-  medium: { dpr: 1.35, shadow: 1536, bloom: true, smaa: false, exposure: 1.02 },
-  high: { dpr: 2.0, shadow: 2048, bloom: true, smaa: true, exposure: 1.05 },
+  low: { dpr: 1.0, shadow: 1024, bloom: false, smaa: false, ao: false, exposure: 0.98 },
+  medium: { dpr: 1.35, shadow: 2048, bloom: true, smaa: false, ao: false, exposure: 1.0 },
+  high: { dpr: 2.0, shadow: 4096, bloom: true, smaa: true, ao: true, exposure: 1.02 },
 };
 
 export class RenderPipeline {
@@ -83,6 +87,7 @@ export class RenderPipeline {
     // so integrated GPUs / older phones still get a picture instead of a black screen.
     const gl = this.renderer.getContext();
     const hdr = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
+    this.hdr = hdr;
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     const target = new THREE.WebGLRenderTarget(size.x || 1, size.y || 1, {
       type: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType,
@@ -91,13 +96,50 @@ export class RenderPipeline {
     });
     this.composer = new EffectComposer(this.renderer, target);
     this.renderPass = new RenderPass(scene, camera);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.42, 0.75, 0.82);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.34, 0.62, 0.95);
     this.outputPass = new OutputPass();
     this.gradePass = new ShaderPass(GradeShader);
     this.smaaPass = new SMAAPass();
 
-    // linear HDR chain: scene -> bloom -> SMAA -> tonemap/encode -> cinematic grade
+    // Ground-truth ambient occlusion for contact shadows (ULTRA only).
+    // Transparent / alpha-tested props are hidden during its G-buffer pass.
+    this.aoIgnore = [];
+    this.aoPass = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
+    this.aoPass.output = GTAOPass.OUTPUT.Default;
+    this.aoPass.blendIntensity = 0.85;
+    this.aoPass.updateGtaoMaterial({
+      radius: 0.42,
+      distanceExponent: 1.15,
+      thickness: 0.9,
+      scale: 1.05,
+      samples: 12,
+      distanceFallOff: 1.0,
+      screenSpaceRadius: false,
+    });
+    this.aoPass.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, radiusExponent: 1.2, rings: 2, samples: 12 });
+    const aoRender = this.aoPass.render.bind(this.aoPass);
+    let aoFailed = false;
+    this.aoPass.render = (renderer, writeBuffer, readBuffer, dt, mask) => {
+      if (aoFailed) return;
+      const hidden = [];
+      for (const m of this.aoIgnore) {
+        if (m && m.visible) { m.visible = false; hidden.push(m); }
+      }
+      try {
+        aoRender(renderer, writeBuffer, readBuffer, dt, mask);
+      } catch (e) {
+        // never let an optional effect take the frame down
+        aoFailed = true;
+        this.aoPass.enabled = false;
+        console.warn('GTAO disabled:', e && e.message);
+      } finally {
+        for (const m of hidden) m.visible = true;
+      }
+    };
+
+    // linear HDR chain: scene -> AO -> bloom -> SMAA -> tonemap/encode -> grade
     this.composer.addPass(this.renderPass);
+    this.composer.addPass(this.aoPass);
     this.composer.addPass(this.bloom);
     this.composer.addPass(this.smaaPass);
     this.composer.addPass(this.outputPass);
@@ -115,6 +157,7 @@ export class RenderPipeline {
     this.renderer.toneMappingExposure = q.exposure;
     this.bloom.enabled = q.bloom;
     this.smaaPass.enabled = q.smaa;
+    this.aoPass.enabled = !!q.ao && this.hdr && this.renderer.capabilities.isWebGL2 !== false;
     this.resize();
   }
 
@@ -130,6 +173,7 @@ export class RenderPipeline {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (this.smaaPass.setSize) this.smaaPass.setSize(w, h);
+    if (this.aoPass.setSize) this.aoPass.setSize(w, h);
   }
 
   render(time, dt) {

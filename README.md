@@ -27,16 +27,19 @@ npm run build && npm run preview
 
 **World**
 - 1.5 km procedural island with fbm + ridged noise heightfield, warped coastline, beaches, cliffs and a 26 m massif
-- Vertex-coloured biome blending (wet sand → sand → grass → forest → rock) plus injected micro-detail shading
+- Vertex-coloured biome blending (wet sand → sand → grass → forest → rock) with mottled multi-octave patchiness, wet-sand darkening at the waterline and banded cliff strata
+- **Tileable PBR ground detail** generated procedurally at boot (albedo grain + Sobel normal map + roughness), tiled 280× so the terrain reads as real dirt/sand up close
 - HDR sky-dome shader with a real sun disc, atmospheric scattering and drifting 5-octave fbm clouds
-- Ocean shader with layered wave normals, fresnel sky reflection, sun glitter, **depth-based shoreline foam** (sampled from the terrain height texture) and manual distance fog
+- Ocean shader with layered wave normals, a **procedural sky reflection** (horizon → zenith gradient + mirrored sun disc), sharp glitter and broad sheen, subsurface glow in the shallows, **depth-based shoreline foam** (sampled from the terrain height texture) and manual distance fog
 - Five hazy islands on the horizon for depth
-- 9 000 instanced grass clumps with GPU wind, 250 instanced trees, instanced palms, rocks and bushes
+- Alpha-tested leaf-card vegetation: 250 trees with bark-textured, bent trunks and 13-card canopies, 260 shrubs, 900 ferns, instanced palms — all with per-instance colour variation and GPU wind sway
+- 9 000 instanced grass clumps with GPU wind, instanced rocks and driftwood
 
 **Towns & combat spaces**
 - 7 named settlements (Cape Town, Bermuda, Riverside, Clocktower, Shipyard, Peak Camp, Sunset Docks)
 - Procedurally assembled houses, warehouses, shipping containers, watchtowers, shacks, sandbag cover, barrels, wrecks and tents
 - All static geometry is **merged per material** at load: 80+ buildings draw in a couple dozen calls
+- Weathered plaster / corrugated metal / aged wood PBR sets (albedo + normal + roughness) with rust, cracks, panel seams and rain streaks; glass and metal pick up the live environment map
 - Oriented-box collider system with circle push-out, ray occlusion and point queries — doors, interiors and rooftops are all real
 
 **Combat**
@@ -48,7 +51,10 @@ npm run build && npm run preview
 - Shrinking safe zone with an animated energy barrier, escalating damage, and a minimap that shows the next circle
 
 **Presentation**
-- ACES filmic tone mapping, HDR bloom, SMAA, cinematic colour grade with vignette + chromatic aberration and a damage red-out
+- **Image-based lighting**: the sky dome is pre-filtered with `PMREMGenerator` at boot and used as `scene.environment`, so every PBR surface gets real sky reflections and soft ambient fill (the sun/hemisphere lights were rebalanced around it)
+- **Ground-truth ambient occlusion** (`GTAOPass`) for contact shadows and grounding, with transparent/alpha-tested props excluded from its G-buffer
+- ACES filmic tone mapping, HDR bloom, SMAA, filmic S-curve grade with vignette + chromatic aberration and a damage red-out
+- A single tight sun shadow map (4 096² on Ultra) that follows the player, with frustum size, bias and PCF radius retuned per preset
 - HUD: alive/kill counters, compass, minimap, kill feed, health/armour, weapon card + 2-slot inventory, reload bar, hit markers, damage direction arcs, zone warnings
 - Fully procedural WebAudio: gunshots, reloads, impacts, footsteps, pickups, explosions, ambient wind
 - Main menu with a live cinematic island flyover, quality profiles (Smooth / Balanced / Ultra), sensitivity and career stats saved to localStorage
@@ -113,9 +119,15 @@ src/
 
 ## ⚙️ Performance notes
 
-Pick **SMOOTH** on the main menu for integrated GPUs and phones: it lowers the render scale, shadow resolution and disables bloom/SMAA.
-**ULTRA** raises the device-pixel-ratio cap to 2×, uses 2048² dynamic shadows and full post-processing.
-Grass density is decided at boot based on whether the device reports a coarse pointer (touch); mobile gets none.
+| preset | render scale | shadows | bloom | SMAA | GTAO |
+|---|---|---|---|---|---|
+| **SMOOTH** | 1× | 1024² | – | – | – |
+| **BALANCED** | 1.35× | 2048² | ✓ | – | – |
+| **ULTRA** | 2× | 4096² | ✓ | ✓ | ✓ |
+
+Pick **SMOOTH** on the main menu for integrated GPUs and phones. ULTRA adds `GTAOPass` (two extra scene renders + full-screen passes) — the effect disables itself automatically if the driver can't provide float render targets.
+All procedural PBR texture sets are generated once and cached, so boot stays ~1 s of texture synthesis on desktop.
+Grass density is decided at boot based on whether the device reports a coarse pointer (touch); mobile gets a lighter tree/shrub budget and no grass.
 
 ---
 

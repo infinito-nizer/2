@@ -5,7 +5,9 @@ import { clamp, lerp } from '../engine/utils.js';
 // Procedural low-poly operator with a simple joint rig
 // ============================================================
 function mat(color, rough = 0.72, metal = 0.12) {
-  return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
+  return new THREE.MeshStandardMaterial({
+    color, roughness: rough, metalness: metal, envMapIntensity: 0.55,
+  });
 }
 
 function mesh(geo, material) {
@@ -71,11 +73,26 @@ export function createCharacter(opts = {}) {
   const packTop = mesh(new THREE.BoxGeometry(0.26, 0.1, 0.14), M.dark);
   packTop.position.set(0, 0.54, -0.21);
   upper.add(packTop);
-  // shoulders
+  // chest cross-straps
   for (const s of [-1, 1]) {
-    const pad = mesh(new THREE.SphereGeometry(0.11, 8, 6), M.accent);
-    pad.scale.set(1, 0.8, 1);
-    pad.position.set(s * 0.28, 0.5, 0);
+    const strap = mesh(new THREE.BoxGeometry(0.045, 0.46, 0.045), M.dark);
+    strap.position.set(s * 0.13, 0.33, 0.225);
+    strap.rotation.z = s * 0.24;
+    upper.add(strap);
+  }
+  // radio on the left shoulder strap
+  const radio = mesh(new THREE.BoxGeometry(0.07, 0.11, 0.045), M.dark);
+  radio.position.set(-0.17, 0.44, 0.16);
+  upper.add(radio);
+  const antenna = mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 5), M.metal);
+  antenna.position.set(-0.17, 0.56, 0.16);
+  upper.add(antenna);
+  // shoulders: rounded pauldrons
+  for (const s of [-1, 1]) {
+    const pad = mesh(new THREE.CapsuleGeometry(0.085, 0.05, 4, 8), M.accent);
+    pad.rotation.z = Math.PI / 2;
+    pad.scale.set(1, 1, 1.15);
+    pad.position.set(s * 0.275, 0.485, 0);
     upper.add(pad);
   }
 
@@ -104,6 +121,20 @@ export function createCharacter(opts = {}) {
   const goggleL = mesh(new THREE.BoxGeometry(0.055, 0.045, 0.02), M.accent);
   goggleL.position.set(0, 0.743, 0.143);
   upper.add(goggleL);
+  // helmet brim
+  const brim = mesh(new THREE.CylinderGeometry(0.155, 0.16, 0.022, 14, 1, true), M.dark);
+  brim.position.y = 0.688;
+  upper.add(brim);
+  // face mask (chin/mouth cover) + eyes
+  const maskGeo = new THREE.BoxGeometry(0.145, 0.075, 0.075);
+  const faceMask = mesh(maskGeo, M.dark);
+  faceMask.position.set(0, 0.672, 0.075);
+  upper.add(faceMask);
+  for (const s of [-1, 1]) {
+    const eye = mesh(new THREE.SphereGeometry(0.016, 6, 5), M.dark);
+    eye.position.set(s * 0.048, 0.712, 0.118);
+    upper.add(eye);
+  }
 
   // ---- arms ----
   const arms = {};
@@ -155,6 +186,17 @@ export function createCharacter(opts = {}) {
     const boot = mesh(new THREE.BoxGeometry(0.115, 0.11, 0.22), M.dark);
     boot.position.set(0, -0.4, 0.035);
     knee.add(boot);
+    const sole = mesh(new THREE.BoxGeometry(0.12, 0.028, 0.235), M.hair);
+    sole.position.set(0, -0.459, 0.035);
+    knee.add(sole);
+    if (side === 'R') {
+      const holster = mesh(new THREE.BoxGeometry(0.07, 0.16, 0.09), M.dark);
+      holster.position.set(0.06, -0.12, 0.02);
+      hip.add(holster);
+      const grip = mesh(new THREE.BoxGeometry(0.035, 0.07, 0.05), M.metal);
+      grip.position.set(0.075, 0.02, 0.02);
+      hip.add(grip);
+    }
 
     legs[side] = { hip, knee };
   }

@@ -69,12 +69,22 @@ class Game {
         this.terrain.generateField();
       }],
       ['SCULPTING LANDMASS', () => this.terrain.buildMesh()],
-      ['FILLING THE OCEAN', () => this.terrain.buildWater()],
-      ['GROWING VEGETATION', () => this.terrain.scatterProps()],
+      ['FILLING THE OCEAN', () => {
+        this.terrain.buildWater();
+        this.terrain.buildDistantIslands();
+        this.pipeline.aoIgnore.push(this.terrain.water, this.sky.mesh);
+      }],
+      ['GROWING VEGETATION', () => {
+        this.terrain.scatterProps();
+        if (this.terrain.grass) this.pipeline.aoIgnore.push(this.terrain.grass);
+        if (this.terrain.foliage) this.pipeline.aoIgnore.push(...this.terrain.foliage);
+      }],
       ['CONSTRUCTING SETTLEMENTS', () => { this.world = new World(this.scene, this.terrain); }],
       ['SYSTEMS ONLINE', () => {
         this.effects = new Effects(this.scene);
+        this.pipeline.aoIgnore.push(...this.effects.aoIgnore);
         this.zone = new Zone(this.scene, this.terrain);
+        if (this.zone.mesh) this.pipeline.aoIgnore.push(this.zone.mesh);
         this.player = new Player(this);
         this.player.root.visible = false;
         this.bots = new BotManager(this);

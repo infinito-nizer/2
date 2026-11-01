@@ -10,6 +10,7 @@ const MAX_PARTICLES = 520;
 export class Effects {
   constructor(scene) {
     this.scene = scene;
+    this.aoIgnore = [];
     this.transients = [];
     this.decalPool = [];
     this.decalIndex = 0;

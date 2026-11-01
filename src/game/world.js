@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { wallTexture, crateTexture } from '../engine/textures.js';
+import { wallTexture, crateTexture, wallTextures, metalTextures, woodTextures } from '../engine/textures.js';
 import { mulberry32, rand, pick, clamp } from '../engine/utils.js';
 import { WORLD } from '../engine/terrain.js';
 import { buildLootWeapon, WEAPONS } from './weapons.js';
@@ -144,26 +144,63 @@ export class World {
   }
 
   _initMaterials() {
-    const wallTex = wallTexture(256, [176, 176, 160]);
-    wallTex.repeat.set(1, 1);
-    const wallTex2 = wallTexture(256, [150, 130, 110]);
+    // shared 256px PBR sets (cached) — tints vary per material
+    const wt = wallTextures(256, 0.80);
+    const wt2 = wallTextures(256, 0.64);
+    const mt = metalTextures(256, [148, 156, 162], 14);
+    const mtFine = metalTextures(256, [120, 128, 134], 26);
+    const wtWood = woodTextures(256, [124, 92, 58]);
+
+    const wall = (tint, tex) => new THREE.MeshStandardMaterial({
+      map: tex.map,
+      normalMap: tex.normalMap,
+      roughnessMap: tex.roughnessMap,
+      normalScale: new THREE.Vector2(0.9, 0.9),
+      roughness: 1.0,
+      color: tint,
+      envMapIntensity: 0.65,
+    });
+    const metal = (tint, tex) => new THREE.MeshStandardMaterial({
+      map: tex.map,
+      normalMap: tex.normalMap,
+      roughnessMap: tex.roughnessMap,
+      roughness: 0.85,
+      metalness: 0.62,
+      color: tint,
+      envMapIntensity: 1.0,
+    });
+
+    const crate = crateTexture(256, [110, 84, 48]);
     this.mats = {
-      wallA: new THREE.MeshStandardMaterial({ map: wallTex, color: 0xbfc3b4, roughness: 0.92 }),
-      wallB: new THREE.MeshStandardMaterial({ map: wallTex2, color: 0xb9a998, roughness: 0.9 }),
-      wallC: new THREE.MeshStandardMaterial({ map: wallTex, color: 0x8e9aa0, roughness: 0.88 }),
-      concrete: new THREE.MeshStandardMaterial({ color: 0x8f8d84, roughness: 0.95 }),
-      roof: new THREE.MeshStandardMaterial({ color: 0x4c545a, roughness: 0.75, metalness: 0.35 }),
-      metal: new THREE.MeshStandardMaterial({ color: 0x6a737a, roughness: 0.55, metalness: 0.7 }),
-      darkMetal: new THREE.MeshStandardMaterial({ color: 0x2b3035, roughness: 0.5, metalness: 0.65 }),
-      rust: new THREE.MeshStandardMaterial({ color: 0x8a4a2c, roughness: 0.85, metalness: 0.25 }),
-      wood: new THREE.MeshStandardMaterial({ color: 0x7a5c3c, roughness: 0.9 }),
-      woodDark: new THREE.MeshStandardMaterial({ color: 0x4d3a28, roughness: 0.92 }),
-      glass: new THREE.MeshStandardMaterial({ color: 0x14313d, roughness: 0.12, metalness: 0.85, emissive: 0x061a22 }),
-      containerRed: new THREE.MeshStandardMaterial({ color: 0x9c3b2c, roughness: 0.75, metalness: 0.35 }),
-      containerBlue: new THREE.MeshStandardMaterial({ color: 0x2a5677, roughness: 0.75, metalness: 0.35 }),
-      containerGreen: new THREE.MeshStandardMaterial({ color: 0x3d6448, roughness: 0.75, metalness: 0.35 }),
-      sandbag: new THREE.MeshStandardMaterial({ color: 0x9c8b64, roughness: 0.95 }),
-      crate: new THREE.MeshStandardMaterial({ map: crateTexture(256, [110, 84, 48]), roughness: 0.88 }),
+      wallA: wall(0xc9cabb, wt),
+      wallB: wall(0xc2ab96, wt2),
+      wallC: wall(0x93a1a8, wt),
+      concrete: wall(0x8f8d84, wt2),
+      roof: metal(0x6d767c, mt),
+      metal: metal(0x8d979d, mtFine),
+      darkMetal: metal(0x3c444a, mtFine),
+      rust: metal(0x9a5836, mt),
+      wood: new THREE.MeshStandardMaterial({
+        map: wtWood.map, normalMap: wtWood.normalMap, roughnessMap: wtWood.roughnessMap,
+        roughness: 1.0, color: 0xa98a63, envMapIntensity: 0.5,
+      }),
+      woodDark: new THREE.MeshStandardMaterial({
+        map: wtWood.map, normalMap: wtWood.normalMap, roughnessMap: wtWood.roughnessMap,
+        roughness: 1.0, color: 0x6c4f36, envMapIntensity: 0.45,
+      }),
+      glass: new THREE.MeshStandardMaterial({
+        color: 0x1b3b47, roughness: 0.08, metalness: 0.95,
+        emissive: 0x05141a, envMapIntensity: 1.6,
+      }),
+      containerRed: metal(0xa8482f, mt),
+      containerBlue: metal(0x2f668c, mt),
+      containerGreen: metal(0x43714f, mt),
+      sandbag: new THREE.MeshStandardMaterial({
+        color: 0x9c8b64, roughness: 0.95, normalMap: wt.normalMap, normalScale: new THREE.Vector2(0.5, 0.5),
+      }),
+      crate: new THREE.MeshStandardMaterial({
+        map: crate, roughness: 0.88, normalMap: wtWood.normalMap, normalScale: new THREE.Vector2(0.6, 0.6),
+      }),
       accent: new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.6, emissive: 0x772800, emissiveIntensity: 0.5 }),
     };
   }

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { fbm, ridged, smoothstep, clamp, lerp, mulberry32, valueNoise } from './utils.js';
-import { detailTexture, frondTexture, grassTexture } from './textures.js';
+import {
+  frondTexture, grassTexture, groundTextures, barkTexture, leafCardTexture,
+} from './textures.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const WORLD = { size: 1500, half: 750, waterLevel: 0 };
@@ -18,14 +20,14 @@ export const POIS = [
 ];
 
 const C = {
-  wetSand: new THREE.Color(0x9c8a63),
-  sand: new THREE.Color(0xe0cd9d),
-  grassA: new THREE.Color(0x6f9c47),
-  grassB: new THREE.Color(0x4d7533),
-  forest: new THREE.Color(0x30512a),
-  rock: new THREE.Color(0x8a8272),
-  rockHi: new THREE.Color(0x9d9484),
-  dirt: new THREE.Color(0x7a6a4c),
+  wetSand: new THREE.Color(0x8f8060),
+  sand: new THREE.Color(0xdcc99a),
+  grassA: new THREE.Color(0x78954c),
+  grassB: new THREE.Color(0x55713b),
+  forest: new THREE.Color(0x35492c),
+  rock: new THREE.Color(0x87806f),
+  rockHi: new THREE.Color(0x9a9182),
+  dirt: new THREE.Color(0x7b6b4d),
 };
 
 export class Terrain {
@@ -168,49 +170,69 @@ export class Terrain {
       const ny = normals[k * 3 + 1];
       const n = valueNoise(x * 0.05, z * 0.05);
       const n2 = fbm(x * 0.012 + 4.1, z * 0.012 + 8.7, 2);
+      const n3 = fbm(x * 0.038 + 11.3, z * 0.038 + 2.9, 3);   // mid-scale mottling
+      const n4 = valueNoise(x * 0.31, z * 0.31);              // fine speckle
 
       if (y < 0.4) {
-        tmp.copy(C.wetSand);
+        // wet, dark sand right at the waterline
+        tmp.copy(C.wetSand).multiplyScalar(0.82 + n * 0.1);
       } else if (y < 2.1) {
         tmp.copy(C.wetSand).lerp(C.sand, smoothstep(0.4, 1.9, y));
+        tmp.multiplyScalar(0.88 + smoothstep(0.4, 1.9, y) * 0.12);
       } else if (y < 3.4) {
         tmp.copy(C.sand).lerp(C.grassA, smoothstep(2.1, 3.4, y));
       } else {
         tmp.copy(C.grassA).lerp(C.grassB, smoothstep(5, 24, y) * 0.85 + n2 * 0.25);
-        tmp.lerp(C.forest, smoothstep(0.42, 0.8, n2) * 0.55);
+        tmp.lerp(C.forest, smoothstep(0.42, 0.8, n2) * 0.62);
+        // organic mid-scale patchiness so large fields never look flat
+        tmp.lerp(C.grassB, smoothstep(0.45, 0.78, n3) * 0.4);
+        tmp.lerp(C.forest, smoothstep(0.6, 0.86, n3) * 0.3);
         if (y > 42) tmp.lerp(C.rock, smoothstep(42, 62, y) * 0.55);
       }
-      // dirt patches
+      // dirt / trodden patches
       if (y > 3.2 && n2 > 0.62 && ny > 0.9) tmp.lerp(C.dirt, (n2 - 0.62) * 1.6);
-      // cliffs
+      if (y > 4 && n3 > 0.72 && ny > 0.94) tmp.lerp(C.dirt, (n3 - 0.72) * 0.9);
+      // cliffs + strata
       const steep = smoothstep(0.86, 0.58, ny);
-      if (steep > 0) tmp.lerp(ny > 0.7 ? C.rock : C.rockHi, steep * 0.92);
-      // subtle brightness variation
-      const v = 0.9 + n * 0.2;
+      if (steep > 0) {
+        tmp.lerp(ny > 0.7 ? C.rock : C.rockHi, steep * 0.92);
+        const strata = 0.5 + 0.5 * Math.sin(y * 1.35 + n3 * 6.0);
+        tmp.multiplyScalar(1 - steep * (0.1 + strata * 0.12));
+      }
+      // fine grain + brightness variation
+      const v = (0.9 + n * 0.2) * (0.97 + n4 * 0.06);
       colors[k * 3] = tmp.r * v;
       colors[k * 3 + 1] = tmp.g * v;
       colors[k * 3 + 2] = tmp.b * v;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-    const detail = detailTexture(256, 0.4);
+    // ---- PBR ground detail: tileable normal + roughness + albedo grain ----
+    const gt = groundTextures(512);
+    const detail = gt.map;
     detail.wrapS = detail.wrapT = THREE.RepeatWrapping;
+    gt.normalMap.repeat.set(280, 280);
+    gt.roughnessMap.repeat.set(90, 90);
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.96,
+      normalMap: gt.normalMap,
+      normalScale: new THREE.Vector2(0.75, 0.75),
+      roughnessMap: gt.roughnessMap,
+      roughness: 1.0,
       metalness: 0.0,
+      envMapIntensity: 0.5,
     });
-    // Subtle procedural micro-detail, injected as an albedo multiplier.
+    // Albedo micro-grain injected as a multiplier (keeps the vertex palette intact).
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uDetail = { value: detail };
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec2 vDetailUv;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vDetailUv = uv * 150.0;');
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vDetailUv = uv * 280.0;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform sampler2D uDetail;\nvarying vec2 vDetailUv;')
         .replace(
           '#include <color_fragment>',
-          '#include <color_fragment>\n  diffuseColor.rgb *= mix(1.0, texture2D(uDetail, vDetailUv).g * 1.85, 0.30);'
+          '#include <color_fragment>\n  diffuseColor.rgb *= mix(1.0, texture2D(uDetail, vDetailUv).rgb * 1.55, 0.55);'
         );
     };
 
@@ -279,15 +301,26 @@ export class Terrain {
           return texture2D(uHeightTex, uv).r * 150.0 - 30.0;
         }
 
+        // Procedural sky reflection so the ocean mirrors the real horizon + sun.
+        vec3 skyColor(vec3 R) {
+          float h = clamp(R.y, 0.0, 1.0);
+          vec3 c = mix(uHorizon, uSkyColor * 0.62, pow(h, 0.52));
+          float sd = max(dot(R, uSunDir), 0.0);
+          c += uSunColor * pow(sd, 14.0) * 0.5;
+          c += uSunColor * pow(sd, 500.0) * 7.0;
+          c = mix(uDeep * 0.55, c, smoothstep(-0.06, 0.015, R.y));
+          return c;
+        }
+
         void main() {
           vec2 p = vWorld.xz;
           float t = uTime;
           // layered gerstner-ish normal
           vec3 n = vec3(0.0, 1.0, 0.0);
-          n.x += sin(p.x * 0.085 + t * 0.95) * 0.055;
+          n.x += sin(p.x * 0.085 + t * 0.95) * 0.062;
           n.x += sin(p.x * 0.21 - t * 1.45 + p.y * 0.05) * 0.028;
           n.x += sin((p.x + p.y) * 0.13 + t * 0.55) * 0.03;
-          n.z += cos(p.y * 0.095 + t * 0.82) * 0.055;
+          n.z += cos(p.y * 0.095 + t * 0.82) * 0.062;
           n.z += cos(p.y * 0.24 - t * 1.2 + p.x * 0.04) * 0.028;
           n.z += cos((p.x - p.y) * 0.115 + t * 0.48) * 0.03;
           n = normalize(n);
@@ -297,16 +330,22 @@ export class Terrain {
           float depth = clamp(-terrainH(p), 0.0, 30.0);
 
           vec3 col = mix(uShallow, uDeep, smoothstep(0.5, 14.0, depth));
-          // sky reflection
-          vec3 refl = mix(uHorizon * 0.9, uSkyColor, 0.55);
-          col = mix(col, refl, clamp(fres * 1.15, 0.0, 0.92));
+          // subsurface glow in the shallows
+          col += uShallow * smoothstep(4.0, 0.4, depth) * 0.35;
+          // mirror the sky
+          vec3 R = reflect(-V, n);
+          vec3 refl = skyColor(R);
+          col = mix(col, refl, clamp(fres * 1.25, 0.0, 0.94));
 
-          // sun specular
+          // sun specular (sharp glint + broad sheen)
           vec3 H = normalize(uSunDir + V);
-          float spec = pow(max(dot(n, H), 0.0), 320.0);
-          col += uSunColor * spec * 3.2;
+          float spec = pow(max(dot(n, H), 0.0), 420.0);
+          col += uSunColor * spec * 4.5;
           float gloss = pow(max(dot(n, H), 0.0), 26.0);
           col += uSunColor * gloss * 0.16;
+          // fine sparkle from the small wave octaves
+          float spark = pow(max(dot(normalize(n + vec3(0.06, 0.0, 0.05)), H), 0.0), 900.0);
+          col += uSunColor * spark * 6.0;
 
           // shoreline foam
           float shore = smoothstep(2.2, 0.05, depth);
@@ -354,17 +393,61 @@ export class Terrain {
       return null;
     };
 
-    const trunkGeo = new THREE.CylinderGeometry(0.28, 0.52, 6.5, 6, 1);
-    trunkGeo.translate(0, 3.25, 0);
-    const leafGeo = new THREE.IcosahedronGeometry(1, 1);
+    // ---- trunks: tapered, gently bent, bark-textured ----
+    const trunkGeo = new THREE.CylinderGeometry(0.19, 0.5, 7.0, 8, 4);
+    trunkGeo.translate(0, 3.5, 0);
+    {
+      const p = trunkGeo.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const y = p.getY(i);
+        const t = Math.max(0, y) / 7.0;
+        p.setX(i, p.getX(i) + t * t * 0.55);
+      }
+      trunkGeo.computeVertexNormals();
+    }
+    const bark = barkTexture(256);
+    bark.wrapS = bark.wrapT = THREE.RepeatWrapping;
+    bark.repeat.set(1.2, 2.6);
 
-    const TREES = this.quality.grass === 0 ? 150 : 250;
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5a4530, roughness: 0.95 });
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, flatShading: true });
+    const TREES = this.quality.grass === 0 ? 120 : 250;
+    const trunkMat = new THREE.MeshStandardMaterial({
+      map: bark,
+      color: 0xa99b86,
+      roughness: 0.97,
+      metalness: 0.0,
+      envMapIntensity: 0.35,
+    });
+
+    // ---- canopies: clusters of alpha-tested leaf cards (real silhouette) ----
+    const leafTex = leafCardTexture(256);
+    const leafMat = new THREE.MeshStandardMaterial({
+      map: leafTex,
+      alphaTest: 0.42,
+      side: THREE.DoubleSide,
+      roughness: 0.78,
+      metalness: 0.0,
+      color: 0xffffff,
+      envMapIntensity: 0.45,
+    });
+    this._addSway(leafMat, 0.05, 1.0);
+
+    const canopyCards = [];
+    for (let c = 0; c < 13; c++) {
+      const a = rng() * Math.PI * 2;
+      const rr = Math.pow(rng(), 0.7) * 1.9;
+      const card = new THREE.PlaneGeometry(3.4, 3.0);
+      const eul = new THREE.Euler((rng() - 0.5) * 1.1, a, (rng() - 0.5) * 1.1, 'YXZ');
+      card.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(eul));
+      card.translate(Math.cos(a) * rr, (rng() - 0.3) * 1.5 + 0.4, Math.sin(a) * rr);
+      canopyCards.push(card);
+    }
+    const canopyGeo = mergeGeometries(canopyCards);
+
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, TREES);
-    const leaves = new THREE.InstancedMesh(leafGeo, leafMat, TREES * 5);
+    const leaves = new THREE.InstancedMesh(canopyGeo, leafMat, TREES);
     trunks.castShadow = true;
     leaves.castShadow = true;
+    leaves.receiveShadow = true;
     trunks.receiveShadow = true;
 
     const m4 = new THREE.Matrix4();
@@ -377,35 +460,35 @@ export class Terrain {
 
     for (let i = 0; i < TREES; i++) {
       const p = validPoint(2.6, 64, 0.42, 12) || { x: (rng() - 0.5) * 500, z: (rng() - 0.5) * 500, h: 20 };
-      const scale = 0.75 + rng() * 0.85;
-      e.set(0, rng() * Math.PI * 2, (rng() - 0.5) * 0.08);
+      const scale = 0.8 + rng() * 0.9;
+      e.set(0, rng() * Math.PI * 2, (rng() - 0.5) * 0.06);
       q.setFromEuler(e);
-      s.set(scale, scale * (0.85 + rng() * 0.4), scale);
+      s.set(scale, scale * (0.85 + rng() * 0.45), scale);
       m4.compose(pos.set(p.x, p.h - 0.2, p.z), q, s);
       trunks.setMatrixAt(i, m4);
 
-      const blobs = 3 + Math.floor(rng() * 2);
-      for (let b = 0; b < blobs; b++) {
-        const bh = 4.6 + rng() * 2.6;
-        const bs = (1.9 + rng() * 1.5) * scale;
-        e.set(rng(), rng() * Math.PI * 2, rng());
-        q.setFromEuler(e);
-        m4.compose(
-          pos.set(p.x + (rng() - 0.5) * 2.2 * scale, p.h + bh * scale, p.z + (rng() - 0.5) * 2.2 * scale),
-          q,
-          s.set(bs, bs * (0.75 + rng() * 0.4), bs)
-        );
-        leaves.setMatrixAt(li, m4);
-        const g = 0.5 + rng() * 0.35;
-        col.setRGB(0.14 * g, 0.4 * g, 0.11 * g);
-        leaves.setColorAt(li, col);
-        li++;
-      }
+      // canopy sits on top of the trunk, slightly larger than the crown
+      const cs = scale * (1.25 + rng() * 0.55);
+      e.set(0, rng() * Math.PI * 2, 0);
+      q.setFromEuler(e);
+      m4.compose(
+        pos.set(p.x + 0.5 * scale, p.h + 5.4 * scale, p.z),
+        q,
+        s.set(cs, cs * (0.82 + rng() * 0.35), cs)
+      );
+      leaves.setMatrixAt(li, m4);
+      const g = 0.62 + rng() * 0.45;
+      col.setRGB(g * 0.92, g, g * 0.82);
+      leaves.setColorAt(li, col);
+      li++;
     }
     leaves.count = li;
     trunks.instanceMatrix.needsUpdate = true;
     leaves.instanceMatrix.needsUpdate = true;
+    if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
     this.group.add(trunks, leaves);
+    this.foliage = this.foliage || [];
+    this.foliage.push(trunks, leaves);
 
     // ---------------- palm trees (merged, instanced) ----------------
     const palmSpots = [];
@@ -422,7 +505,10 @@ export class Terrain {
       const curve = new THREE.CatmullRomCurve3(trunkPts);
       const palmTrunkGeo = new THREE.TubeGeometry(curve, 8, 0.26, 6, false);
       // taper is faked with two cones on top
-      const palmTrunkMat = new THREE.MeshStandardMaterial({ color: 0x7a6446, roughness: 0.9 });
+      const palmBark = barkTexture(128);
+      palmBark.wrapS = palmBark.wrapT = THREE.RepeatWrapping;
+      palmBark.repeat.set(1, 4);
+      const palmTrunkMat = new THREE.MeshStandardMaterial({ map: palmBark, color: 0xa8987c, roughness: 0.92 });
 
       const frondGeos = [];
       const frondTex = frondTexture(256);
@@ -447,9 +533,11 @@ export class Terrain {
         transparent: true,
         alphaTest: 0.4,
         side: THREE.DoubleSide,
-        roughness: 0.8,
-        color: 0xb9d68e,
+        roughness: 0.72,
+        color: 0xc4dd9c,
+        envMapIntensity: 0.5,
       });
+      this._addSway(palmFrondMat, 0.09, 1.0);
 
       const tMesh = new THREE.InstancedMesh(palmTrunkGeo, palmTrunkMat, palmSpots.length);
       const fMesh = new THREE.InstancedMesh(palmFrondGeo, palmFrondMat, palmSpots.length);
@@ -464,6 +552,8 @@ export class Terrain {
         fMesh.setMatrixAt(i, m4);
       });
       this.group.add(tMesh, fMesh);
+      this.foliage = this.foliage || [];
+      this.foliage.push(tMesh, fMesh);
     }
 
     // ---------------- rocks ----------------
@@ -483,24 +573,109 @@ export class Terrain {
     }
     this.group.add(rocks);
 
-    // ---------------- bushes ----------------
-    const bushGeo = new THREE.IcosahedronGeometry(1, 1);
-    const bushMat = new THREE.MeshStandardMaterial({ color: 0x2f5226, roughness: 0.92, flatShading: true });
-    const BUSHES = 180;
+    // ---------------- bushes / shrubs ---------------- (leaf cards)
+    const bushCards = [];
+    for (let c = 0; c < 6; c++) {
+      const a = rng() * Math.PI * 2;
+      const card = new THREE.PlaneGeometry(1.5, 1.35);
+      card.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
+        new THREE.Euler((rng() - 0.5) * 0.7, a, (rng() - 0.5) * 0.7, 'YXZ')
+      ));
+      card.translate(Math.cos(a) * 0.42, 0.55 + rng() * 0.35, Math.sin(a) * 0.42);
+      bushCards.push(card);
+    }
+    const bushGeo = mergeGeometries(bushCards);
+    const bushMat = new THREE.MeshStandardMaterial({
+      map: leafTex, alphaTest: 0.42, side: THREE.DoubleSide,
+      roughness: 0.85, color: 0x9fd08a, envMapIntensity: 0.4,
+    });
+    this._addSway(bushMat, 0.04, 1.0);
+    const BUSHES = this.quality.grass === 0 ? 120 : 260;
     const bushes = new THREE.InstancedMesh(bushGeo, bushMat, BUSHES);
     bushes.castShadow = true;
+    bushes.receiveShadow = true;
     for (let i = 0; i < BUSHES; i++) {
       const p = validPoint(2.4, 62, 0.5, 8) || { x: (rng() - 0.5) * 460, z: (rng() - 0.5) * 460, h: 20 };
-      const sc = 0.5 + rng() * 1.1;
+      const sc = 0.7 + rng() * 1.35;
       e.set(0, rng() * 3, 0);
       q.setFromEuler(e);
-      m4.compose(pos.set(p.x, p.h + sc * 0.3, p.z), q, s.set(sc * 1.4, sc * 0.8, sc * 1.4));
+      m4.compose(pos.set(p.x, p.h - 0.08, p.z), q, s.set(sc, sc * (0.75 + rng() * 0.5), sc));
       bushes.setMatrixAt(i, m4);
+      const g = 0.8 + rng() * 0.35;
+      col.setRGB(0.82 * g, g, 0.78 * g);
+      bushes.setColorAt(i, col);
     }
+    if (bushes.instanceColor) bushes.instanceColor.needsUpdate = true;
     this.group.add(bushes);
+    this.foliage = this.foliage || [];
+    this.foliage.push(bushes);
+
+    // ---------------- ferns / undergrowth ----------------
+    if (this.quality.grass > 0) {
+      const fernCards = [];
+      for (let c = 0; c < 4; c++) {
+        const a = (c / 4) * Math.PI * 2 + rng() * 0.5;
+        const card = new THREE.PlaneGeometry(1.15, 1.0);
+        card.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
+          new THREE.Euler(-0.5 - rng() * 0.3, a, 0, 'YXZ')
+        ));
+        card.translate(Math.cos(a) * 0.3, 0.42, Math.sin(a) * 0.3);
+        fernCards.push(card);
+      }
+      const fernGeo = mergeGeometries(fernCards);
+      const fernMat = new THREE.MeshStandardMaterial({
+        map: leafTex, alphaTest: 0.42, side: THREE.DoubleSide,
+        roughness: 0.9, color: 0xa6c98c, envMapIntensity: 0.35,
+      });
+      this._addSway(fernMat, 0.06, 1.0);
+      const FERNS = 900;
+      const ferns = new THREE.InstancedMesh(fernGeo, fernMat, FERNS);
+      ferns.receiveShadow = true;
+      for (let i = 0; i < FERNS; i++) {
+        const p = validPoint(3.4, 58, 0.42, 10) || { x: (rng() - 0.5) * 460, z: (rng() - 0.5) * 460, h: 20 };
+        const sc = 0.7 + rng() * 0.9;
+        e.set(0, rng() * Math.PI * 2, 0);
+        q.setFromEuler(e);
+        m4.compose(pos.set(p.x, p.h - 0.05, p.z), q, s.set(sc, sc, sc));
+        ferns.setMatrixAt(i, m4);
+        const g = 0.78 + rng() * 0.4;
+        col.setRGB(0.78 * g, g, 0.7 * g);
+        ferns.setColorAt(i, col);
+      }
+      if (ferns.instanceColor) ferns.instanceColor.needsUpdate = true;
+      this.group.add(ferns);
+      this.foliage.push(ferns);
+    }
 
     // ---------------- grass ----------------
     if (this.quality.grass > 0) this.buildGrass(rng);
+  }
+
+  /** Wind sway injected into a material (works with instancing). */
+  _addSway(mat, amount = 0.06, heightScale = 1.0) {
+    const uniforms = { uTime: { value: 0 } };
+    mat.userData.sway = uniforms;
+    if (!this.swayMaterials) this.swayMaterials = [];
+    this.swayMaterials.push(uniforms);
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = uniforms.uTime;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uTime;')
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          {
+            vec3 anchor = vec3(0.0);
+            #ifdef USE_INSTANCING
+              anchor = instanceMatrix[3].xyz;
+            #endif
+            float ph = anchor.x * 0.35 + anchor.z * 0.27;
+            float sw = sin(uTime * 1.35 + ph) * ${amount.toFixed(3)} + sin(uTime * 2.7 + ph * 1.7) * ${(amount * 0.4).toFixed(3)};
+            transformed.x += sw * max(transformed.y, 0.0) * ${heightScale.toFixed(2)};
+            transformed.z += sw * 0.6 * max(transformed.y, 0.0) * ${heightScale.toFixed(2)};
+          }`
+        );
+    };
   }
 
   buildGrass(rng) {
@@ -613,6 +788,9 @@ export class Terrain {
   }
 
   update(time, camera) {
+    if (this.swayMaterials) {
+      for (const u of this.swayMaterials) u.uTime.value = time;
+    }
     if (this.waterUniforms) {
       this.waterUniforms.uTime.value = time;
       this.waterUniforms.uCamPos.value.copy(camera.position);

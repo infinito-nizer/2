@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#05080d" />
+    <title>FIRE ZONE — Battle Royale</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Teko:wght@500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene"></canvas>
+
+      <!-- ======================= LOADING ======================= -->
+      <div id="loading" class="screen">
+        <div class="load-inner">
+          <div class="logo-mark">
+            <span class="lm-1">FIRE</span><span class="lm-2">ZONE</span>
+          </div>
+          <div class="load-sub">TACTICAL BATTLE ROYALE</div>
+          <div class="load-bar"><div id="load-fill"></div></div>
+          <div id="load-text" class="load-text">DEPLOYING ASSETS…</div>
+        </div>
+      </div>
+
+      <!-- ======================= MAIN MENU ======================= -->
+      <div id="menu" class="screen hidden">
+        <div class="menu-bg-grid"></div>
+        <div class="menu-top">
+          <div class="brand">
+            <div class="brand-title"><em>FIRE</em>ZONE</div>
+            <div class="brand-tag">SURVIVE. DOMINATE. BE THE LAST ONE STANDING.</div>
+          </div>
+          <div class="menu-ping"><span class="dot"></span> SERVER: ASIA-N1 · 24 MS</div>
+        </div>
+
+        <div class="menu-main">
+          <div class="menu-card">
+            <div class="card-label">MATCH CONFIGURATION</div>
+            <div class="mode-row">
+              <div class="mode-tile active">
+                <div class="mode-icon">◈</div>
+                <div class="mode-name">BATTLE ROYALE</div>
+                <div class="mode-desc">SQUAD OF 1 · 10 PLAYERS</div>
+              </div>
+              <div class="mode-tile">
+                <div class="mode-icon">◎</div>
+                <div class="mode-name">ISLAND</div>
+                <div class="mode-desc">BERMUDA CLASSIC</div>
+              </div>
+            </div>
+
+            <div class="card-label small">GRAPHICS PROFILE</div>
+            <div class="seg" id="quality-seg">
+              <button data-q="low">SMOOTH</button>
+              <button data-q="medium">BALANCED</button>
+              <button data-q="high" class="active">ULTRA</button>
+            </div>
+
+            <div class="card-label small">LOOK SENSITIVITY <span id="sens-val">1.00</span></div>
+            <input id="sens" type="range" min="0.3" max="2.2" step="0.05" value="1" />
+
+            <button id="play-btn" class="play-btn">
+              <span class="pb-main">ENTER THE ZONE</span>
+              <span class="pb-sub">CLICK TO DEPLOY</span>
+            </button>
+
+            <div class="controls-mini">
+              <div><b>WASD</b> MOVE</div>
+              <div><b>MOUSE</b> AIM</div>
+              <div><b>LMB</b> FIRE</div>
+              <div><b>SHIFT</b> SPRINT</div>
+              <div><b>C</b> CROUCH</div>
+              <div><b>R</b> RELOAD</div>
+              <div><b>Q</b> SWAP</div>
+              <div><b>SPACE</b> JUMP / CHUTE</div>
+            </div>
+          </div>
+
+          <div class="menu-side">
+            <div class="stat-plate">
+              <div class="sp-label">CAREER</div>
+              <div class="sp-grid">
+                <div><span id="ls-matches">0</span><small>MATCHES</small></div>
+                <div><span id="ls-wins">0</span><small>BOOYAH</small></div>
+                <div><span id="ls-kills">0</span><small>KILLS</small></div>
+              </div>
+            </div>
+            <div class="tip-plate">
+              <div class="sp-label">FIELD INTEL</div>
+              <p id="tip-text">Land near cover, loot fast, and rotate ahead of the blue zone. The last squad standing wins the BOOYAH.</p>
+            </div>
+          </div>
+        </div>
+        <div class="menu-foot">FAN-MADE TECH DEMO · NOT AFFILIATED WITH ANY COMMERCIAL TITLE</div>
+      </div>
+
+      <!-- ======================= HUD ======================= -->
+      <div id="hud" class="hidden">
+        <div class="hud-top">
+          <div class="top-left">
+            <div class="brand-mini"><em>FIRE</em>ZONE</div>
+            <div class="feed" id="killfeed"></div>
+          </div>
+
+          <div class="top-center">
+            <div class="alive-box">
+              <div class="alive-num" id="alive-count">10</div>
+              <div class="alive-lbl">ALIVE</div>
+              <div class="kills-box"><b id="kill-count">0</b><span>KILLS</span></div>
+            </div>
+            <div class="match-clock" id="match-clock">00:00</div>
+            <div class="compass" id="compass"><div class="compass-strip" id="compass-strip"></div><div class="compass-needle"></div></div>
+          </div>
+
+          <div class="top-right">
+            <div class="zone-chip" id="zone-chip">
+              <span class="zc-dot"></span>
+              <span id="zone-text">SAFE ZONE CLOSING</span>
+              <b id="zone-time">0:45</b>
+            </div>
+            <div class="minimap-wrap">
+              <canvas id="minimap" width="220" height="220"></canvas>
+              <div class="mm-grid"></div>
+              <div class="mm-frame"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="crosshair" id="crosshair">
+          <i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i>
+          <span class="ch-dot"></span>
+          <div class="hitmarker" id="hitmarker"></div>
+        </div>
+        <div class="dmg-dirs" id="dmg-dirs"></div>
+
+        <div class="hud-bottom">
+          <div class="bl-panel">
+            <div class="player-tag"><span class="pt-rank">LV.14</span> OPERATOR <b id="player-tag-name">RAVEN</b></div>
+            <div class="bar-row">
+              <div class="bar-icon hp">✚</div>
+              <div class="bar hp-bar"><div id="hp-fill"></div><div class="bar-ticks"></div><span id="hp-text">100</span></div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-icon ar">◈</div>
+              <div class="bar ar-bar"><div id="ar-fill"></div><span id="ar-text">0</span></div>
+            </div>
+            <div class="quick-row" id="quick-row">
+              <div class="quick-item" id="q-med"><b>MEDKIT</b><span id="med-count">×0</span></div>
+              <div class="quick-item" id="q-shield"><b>VEST</b><span id="shield-count">×0</span></div>
+            </div>
+          </div>
+
+          <div class="br-panel">
+            <div class="weapon-card">
+              <div class="wc-top"><span id="wpn-type">ASSAULT RIFLE</span><span class="wc-slot" id="wpn-slot">1</span></div>
+              <div class="wc-name" id="wpn-name">AK47</div>
+              <div class="wc-ammo"><span id="ammo-mag">30</span><em>/</em><span id="ammo-res">90</span></div>
+              <div class="wc-reload" id="reload-row"><i id="reload-fill"></i></div>
+            </div>
+            <div class="slots">
+              <div class="slot active" id="slot-1"><span>1</span><b id="slot-1-name">—</b></div>
+              <div class="slot" id="slot-2"><span>2</span><b id="slot-2-name">—</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="loot-toast" id="loot-toast"></div>
+        <div class="banner" id="banner"></div>
+        <div class="zone-warn" id="zone-warn">⚠ OUTSIDE THE SAFE ZONE — MOVE IN ⚠</div>
+        <div class="drop-hint" id="drop-hint">HOLD <b>W</b> TO GLIDE · <b>SPACE</b> TO DEPLOY CHUTE</div>
+        <div id="dmg-numbers"></div>
+
+        <div id="mobile-ui" class="hidden">
+          <div class="joy" id="joy"><div class="joy-knob" id="joy-knob"></div></div>
+          <div class="mbtns">
+            <button class="mb fire" id="m-fire">FIRE</button>
+            <button class="mb" id="m-jump">JUMP</button>
+            <button class="mb" id="m-crouch">CROUCH</button>
+            <button class="mb" id="m-reload">RELOAD</button>
+            <button class="mb" id="m-swap">SWAP</button>
+            <button class="mb" id="m-heal">HEAL</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================= END SCREEN ======================= -->
+      <div id="endscreen" class="screen hidden">
+        <div class="end-card">
+          <div class="end-kicker" id="end-kicker">MATCH COMPLETE</div>
+          <div class="end-title" id="end-title">BOOYAH!</div>
+          <div class="end-sub" id="end-sub">#1 OF 10 · YOU ARE THE LAST ONE STANDING</div>
+          <div class="end-stats">
+            <div><span id="end-kills">0</span><small>ELIMINATIONS</small></div>
+            <div><span id="end-dmg">0</span><small>DAMAGE</small></div>
+            <div><span id="end-place">#1</span><small>PLACEMENT</small></div>
+            <div><span id="end-time">0:00</span><small>SURVIVED</small></div>
+          </div>
+          <div class="end-actions">
+            <button id="again-btn" class="play-btn small"><span class="pb-main">PLAY AGAIN</span></button>
+            <button id="menu-btn" class="ghost-btn">MAIN MENU</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="fade" class="fade"></div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "firezone-battle-royale",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "FIRE ZONE — a 3D browser battle royale inspired by mobile shooters, built with Three.js",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.5"
+  }
+}

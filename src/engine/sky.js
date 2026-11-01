@@ -169,7 +169,7 @@ export class Sky {
       const rt = pmrem.fromScene(envScene, 0.02, 0.5, 400);
       this.envMap = rt.texture;
       this.scene.environment = this.envMap;
-      this.scene.environmentIntensity = 0.72;
+      this.scene.environmentIntensity = 0.95;
     } catch (e) {
       this.envMap = null;
       console.warn('env map unavailable:', e && e.message);

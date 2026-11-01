@@ -6,7 +6,7 @@ import { clamp, lerp } from '../engine/utils.js';
 // ============================================================
 function mat(color, rough = 0.72, metal = 0.12) {
   return new THREE.MeshStandardMaterial({
-    color, roughness: rough, metalness: metal, envMapIntensity: 0.55,
+    color, roughness: rough, metalness: metal, envMapIntensity: 0.7,
   });
 }
 

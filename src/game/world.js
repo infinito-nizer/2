@@ -144,12 +144,13 @@ export class World {
   }
 
   _initMaterials() {
-    // shared 256px PBR sets (cached) — tints vary per material
-    const wt = wallTextures(256, 0.80);
-    const wt2 = wallTextures(256, 0.64);
-    const mt = metalTextures(256, [148, 156, 162], 14);
-    const mtFine = metalTextures(256, [120, 128, 134], 26);
-    const wtWood = woodTextures(256, [124, 92, 58]);
+    // shared PBR sets (cached) — tints vary per material, mobile uses half res
+    const px = this.terrain.quality && this.terrain.quality.grass === 0 ? 128 : 256;
+    const wt = wallTextures(px, 0.80);
+    const wt2 = wallTextures(px, 0.64);
+    const mt = metalTextures(px, [148, 156, 162], 14);
+    const mtFine = metalTextures(px, [120, 128, 134], 26);
+    const wtWood = woodTextures(px, [124, 92, 58]);
 
     const wall = (tint, tex) => new THREE.MeshStandardMaterial({
       map: tex.map,
@@ -158,7 +159,7 @@ export class World {
       normalScale: new THREE.Vector2(0.9, 0.9),
       roughness: 1.0,
       color: tint,
-      envMapIntensity: 0.65,
+      envMapIntensity: 0.8,
     });
     const metal = (tint, tex) => new THREE.MeshStandardMaterial({
       map: tex.map,

@@ -208,7 +208,7 @@ export class Terrain {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
     // ---- PBR ground detail: tileable normal + roughness + albedo grain ----
-    const gt = groundTextures(512);
+    const gt = groundTextures(this.quality.grass === 0 ? 256 : 512);
     const detail = gt.map;
     detail.wrapS = detail.wrapT = THREE.RepeatWrapping;
     gt.normalMap.repeat.set(280, 280);
@@ -220,7 +220,7 @@ export class Terrain {
       roughnessMap: gt.roughnessMap,
       roughness: 1.0,
       metalness: 0.0,
-      envMapIntensity: 0.5,
+      envMapIntensity: 0.75,
     });
     // Albedo micro-grain injected as a multiplier (keeps the vertex palette intact).
     mat.onBeforeCompile = (shader) => {
@@ -427,7 +427,7 @@ export class Terrain {
       roughness: 0.78,
       metalness: 0.0,
       color: 0xffffff,
-      envMapIntensity: 0.45,
+      envMapIntensity: 0.6,
     });
     this._addSway(leafMat, 0.05, 1.0);
 

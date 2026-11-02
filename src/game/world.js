@@ -45,6 +45,7 @@ function scaleUV(geo, s) {
 const M4 = new THREE.Matrix4();
 const Q = new THREE.Quaternion();
 const V = new THREE.Vector3();
+const ONE = new THREE.Vector3(1, 1, 1);
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** Oriented box collider set. */
@@ -203,6 +204,11 @@ export class World {
         map: crate, roughness: 0.88, normalMap: wtWood.normalMap, normalScale: new THREE.Vector2(0.6, 0.6),
       }),
       accent: new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.6, emissive: 0x772800, emissiveIntensity: 0.5 }),
+      canvas: new THREE.MeshStandardMaterial({ color: 0xd9cfb4, roughness: 0.94, side: THREE.DoubleSide }),
+      rubber: new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: 0.92 }),
+      lamp: new THREE.MeshStandardMaterial({
+        color: 0xffe9bd, roughness: 0.35, emissive: 0xffcf87, emissiveIntensity: 1.6,
+      }),
     };
   }
 
@@ -394,6 +400,104 @@ export class World {
     this.buildings.push({ x, z, w, d, h, type: 'shack', gy });
   }
 
+  // ---------------- street furniture ----------------
+  _groundMatrix(x, z, rot) {
+    const gy = this.terrain.heightAt(x, z) - 0.05;
+    M4.compose(V.set(x, gy, z), Q.setFromAxisAngle(UP, rot), ONE);
+    return { M: M4.clone(), gy };
+  }
+
+  _lampPost(x, z, rot) {
+    const { M, gy } = this._groundMatrix(x, z, rot);
+    this._cyl(M, 0.07, 0.1, 5.0, 0, 2.5, 0, this.mats.darkMetal, true, 0.16);
+    this._box(M, 0.9, 0.08, 0.08, 0.45, 5.0, 0, this.mats.darkMetal, { collide: false });
+    this._box(M, 0.5, 0.16, 0.3, 0.85, 4.92, 0, this.mats.metal, { collide: false });
+    this._box(M, 0.42, 0.1, 0.24, 0.85, 4.82, 0, this.mats.lamp, { collide: false });
+    void gy;
+  }
+
+  _fence(x, z, rot, len) {
+    const { M } = this._groundMatrix(x, z, rot);
+    const n = Math.max(2, Math.round(len / 1.7));
+    for (let i = 0; i <= n; i++) {
+      const lx = -len / 2 + (i / n) * len;
+      this._box(M, 0.12, 1.15, 0.12, lx, 0.58, 0, this.mats.woodDark, { collide: false });
+    }
+    for (const h of [0.45, 0.95]) {
+      this._box(M, len, 0.09, 0.05, 0, h, 0, this.mats.wood, { collide: false });
+    }
+    V.set(x, 0, z);
+    this.colliders.add(x, z, len / 2, 0.18, -rot, this.terrain.heightAt(x, z) - 1, this.terrain.heightAt(x, z) + 1.2);
+  }
+
+  _signBoard(x, z, rot) {
+    const { M } = this._groundMatrix(x, z, rot);
+    for (const s of [-1, 1]) {
+      this._box(M, 0.12, 2.5, 0.12, s * 1.1, 1.25, 0, this.mats.woodDark, { collide: false });
+    }
+    this._box(M, 2.6, 1.2, 0.1, 0, 2.2, 0.02, this.mats.wood, { collide: false });
+    this._box(M, 2.2, 0.8, 0.06, 0, 2.2, 0.09, this.mats.accent, { collide: false });
+    this.colliders.add(x, z, 1.3, 0.2, -rot, this.terrain.heightAt(x, z) - 1, this.terrain.heightAt(x, z) + 2.8);
+  }
+
+  _tireStack(x, z) {
+    const { M } = this._groundMatrix(x, z, this.rng() * 6.28);
+    const count = 2 + Math.floor(this.rng() * 3);
+    for (let i = 0; i < count; i++) {
+      const geo = new THREE.TorusGeometry(0.42, 0.17, 6, 12);
+      geo.rotateX(Math.PI / 2);
+      const m = new THREE.Matrix4().multiplyMatrices(M, new THREE.Matrix4().makeTranslation(0, 0.18 + i * 0.34, 0));
+      this.batcher.add(geo, this.mats.rubber, m);
+    }
+  }
+
+  _pallet(x, z, rot) {
+    const { M } = this._groundMatrix(x, z, rot);
+    this._box(M, 1.2, 0.14, 1.0, 0, 0.07, 0, this.mats.wood, { collide: false });
+    this._box(M, 1.2, 0.14, 1.0, 0.1, 0.21, 0.05, this.mats.wood, { collide: false });
+  }
+
+  _stall(x, z, rot) {
+    const { M } = this._groundMatrix(x, z, rot);
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        this._box(M, 0.12, 2.3, 0.12, sx * 1.7, 1.15, sz * 1.1, this.mats.woodDark, { collide: false });
+      }
+    }
+    // striped awning
+    for (let i = 0; i < 5; i++) {
+      this._box(M, 0.78, 0.08, 2.6, -1.56 + i * 0.78, 2.34 - Math.abs(i - 2) * 0.03, 0,
+        i % 2 ? this.mats.accent : this.mats.canvas, { collide: false });
+    }
+    this._box(M, 3.4, 0.1, 1.0, 0, 0.95, 0.5, this.mats.wood, { collide: false });
+    this.colliders.add(x, z, 1.8, 1.2, -rot, this.terrain.heightAt(x, z) - 1, this.terrain.heightAt(x, z) + 2.4);
+  }
+
+  _powerPole(x, z, rot) {
+    const { M } = this._groundMatrix(x, z, rot);
+    this._cyl(M, 0.13, 0.19, 7.0, 0, 3.5, 0, this.mats.woodDark, true, 0.22);
+    this._box(M, 2.3, 0.12, 0.12, 0, 6.5, 0, this.mats.woodDark, { collide: false });
+    this._box(M, 1.5, 0.1, 0.1, 0, 6.0, 0, this.mats.woodDark, { collide: false });
+    for (const s of [-1, 1]) {
+      this._box(M, 0.1, 0.24, 0.1, s * 0.95, 6.7, 0, this.mats.glass, { collide: false });
+    }
+  }
+
+  _wire(a, b, sag = 0.5) {
+    const mid = new THREE.Vector3((a.x + b.x) / 2, (a.y + b.y) / 2 - sag, (a.z + b.z) / 2);
+    for (const [p, q] of [[a, mid], [mid, b]]) {
+      const dir = new THREE.Vector3(q.x - p.x, q.y - p.y, q.z - p.z);
+      const len = dir.length();
+      if (len < 0.2) continue;
+      const geo = new THREE.BoxGeometry(len, 0.045, 0.045);
+      const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.clone().normalize());
+      const mm = new THREE.Matrix4().compose(
+        new THREE.Vector3((p.x + q.x) / 2, (p.y + q.y) / 2, (p.z + q.z) / 2), quat, ONE
+      );
+      this.batcher.add(geo, this.mats.darkMetal, mm);
+    }
+  }
+
   _cover(x, z, rot, len = 3.4) {
     const gy = this.terrain.heightAt(x, z);
     M4.compose(new THREE.Vector3(x, gy, z), Q.setFromAxisAngle(UP, rot), new THREE.Vector3(1, 1, 1));
@@ -472,6 +576,60 @@ export class World {
         const x = poi.x + Math.cos(a) * r;
         const z = poi.z + Math.sin(a) * r;
         if (this.terrain.heightAt(x, z) > 2.5) this._barrels(x, z);
+      }
+
+      // ---- street furniture: lamps, fences, signs, stalls, clutter ----
+      const lamps = 3 + Math.floor(poi.r / 24);
+      for (let i = 0; i < lamps; i++) {
+        const a = rng() * Math.PI * 2;
+        const r = poi.r * (0.42 + rng() * 0.38);
+        const x = poi.x + Math.cos(a) * r;
+        const z = poi.z + Math.sin(a) * r;
+        if (this.terrain.heightAt(x, z) < 2.6) continue;
+        this._lampPost(x, z, rng() * Math.PI * 2);
+      }
+      for (let i = 0; i < 3; i++) {
+        const a = rng() * Math.PI * 2;
+        const r = poi.r * (0.5 + rng() * 0.4);
+        const x = poi.x + Math.cos(a) * r;
+        const z = poi.z + Math.sin(a) * r;
+        if (this.terrain.heightAt(x, z) < 2.6) continue;
+        this._fence(x, z, rng() * Math.PI * 2, 4.5 + rng() * 5);
+      }
+      {
+        const a = rng() * Math.PI * 2;
+        const r = poi.r * 0.78;
+        const x = poi.x + Math.cos(a) * r;
+        const z = poi.z + Math.sin(a) * r;
+        if (this.terrain.heightAt(x, z) > 2.8) this._signBoard(x, z, a + Math.PI / 2);
+        this._stall(poi.x + Math.cos(a + 1.9) * poi.r * 0.42, poi.z + Math.sin(a + 1.9) * poi.r * 0.42,
+          a + Math.PI / 2);
+      }
+      for (let i = 0; i < 5; i++) {
+        const a = rng() * Math.PI * 2;
+        const r = poi.r * (0.3 + rng() * 0.55);
+        const x = poi.x + Math.cos(a) * r;
+        const z = poi.z + Math.sin(a) * r;
+        if (this.terrain.heightAt(x, z) < 2.5) continue;
+        if (rng() > 0.5) this._tireStack(x, z); else this._pallet(x, z, rng() * 6.28);
+      }
+    }
+
+    // ---- power lines following the dirt roads ----
+    const paths = this.terrain.roadPaths || [];
+    for (const path of paths) {
+      let last = null;
+      let nextAt = 0;
+      for (const pt of path) {
+        if (pt.d < nextAt) continue;
+        nextAt = pt.d + 46 + this.rng() * 10;
+        const gy = this.terrain.heightAt(pt.x, pt.z);
+        if (gy < 2.4) { last = null; continue; }
+        const rot = Math.atan2(pt.x, pt.z) + this.rng() * 0.4;
+        this._powerPole(pt.x, pt.z, rot);
+        const top = { x: pt.x, y: gy + 6.6, z: pt.z };
+        if (last && Math.hypot(top.x - last.x, top.z - last.z) < 90) this._wire(last, top, 0.6);
+        last = top;
       }
     }
 

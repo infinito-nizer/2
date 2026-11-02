@@ -31,6 +31,7 @@ npm run build && npm run preview
 - **Tileable PBR ground detail** generated procedurally at boot (albedo grain + Sobel normal map + roughness), tiled 280× so the terrain reads as real dirt/sand up close
 - HDR sky-dome shader with a real sun disc, atmospheric scattering and drifting 5-octave fbm clouds
 - Ocean shader with layered wave normals, a **procedural sky reflection** (horizon → zenith gradient + mirrored sun disc), sharp glitter and broad sheen, subsurface glow in the shallows, **depth-based shoreline foam** (sampled from the terrain height texture) and manual distance fog
+- **Dirt road network**: every settlement links to its two closest neighbours with a worn track that hugs the height field (tyre ruts, wobbling edges, alpha-faded verges) plus a blotchy worn plaza at each settlement centre — one extra draw call for the whole map
 - Five hazy islands on the horizon for depth
 - Alpha-tested leaf-card vegetation: 250 trees with bark-textured, bent trunks and 13-card canopies, 260 shrubs, 900 ferns, instanced palms — all with per-instance colour variation and GPU wind sway
 - 9 000 instanced grass clumps with GPU wind, instanced rocks and driftwood
@@ -39,6 +40,7 @@ npm run build && npm run preview
 - 7 named settlements (Cape Town, Bermuda, Riverside, Clocktower, Shipyard, Peak Camp, Sunset Docks)
 - Procedurally assembled houses, warehouses, shipping containers, watchtowers, shacks, sandbag cover, barrels, wrecks and tents
 - All static geometry is **merged per material** at load: 80+ buildings draw in a couple dozen calls
+- Street furniture in every settlement: lamp posts, wooden fences, signboards, market stalls with striped awnings, tyre stacks and pallets — plus power poles every ~50 m along the roads with sagging wires
 - Weathered plaster / corrugated metal / aged wood PBR sets (albedo + normal + roughness) with rust, cracks, panel seams and rain streaks; glass and metal pick up the live environment map
 - Oriented-box collider system with circle push-out, ray occlusion and point queries — doors, interiors and rooftops are all real
 

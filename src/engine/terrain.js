@@ -209,6 +209,7 @@ export class Terrain {
 
     // ---- PBR ground detail: tileable normal + roughness + albedo grain ----
     const gt = groundTextures(this.quality.grass === 0 ? 256 : 512);
+    this.groundMaps = gt;
     const detail = gt.map;
     detail.wrapS = detail.wrapT = THREE.RepeatWrapping;
     gt.normalMap.repeat.set(280, 280);
@@ -676,6 +677,173 @@ export class Terrain {
           }`
         );
     };
+  }
+
+  // ---------------- dirt roads between settlements ----------------
+  /**
+   * Worn dirt tracks that link every settlement to its two closest
+   * neighbours, plus a worn plaza at each POI. Built as a flat, alpha-faded
+   * strip that hugs the height field, so it costs one draw call and never
+   * z-fights with the terrain.
+   */
+  buildRoads() {
+    const pois = this.pois;
+    if (!pois || pois.length < 2 || !this.groundMaps) return;
+    const rng = mulberry32(20261102);
+
+    const links = [];
+    for (let i = 0; i < pois.length; i++) {
+      const order = pois
+        .map((p, j) => ({ j, d: Math.hypot(p.x - pois[i].x, p.z - pois[i].z) }))
+        .filter((o) => o.j !== i)
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 2);
+      for (const o of order) {
+        const a = Math.min(i, o.j);
+        const b = Math.max(i, o.j);
+        if (!links.some((l) => l.a === a && l.b === b)) links.push({ a, b });
+      }
+    }
+
+    const pos = [];
+    const col = [];
+    const uvs = [];
+    const idx = [];
+    const dirtDark = new THREE.Color(0x5f5138);
+    const dirtLight = new THREE.Color(0x8d7a57);
+    const c = new THREE.Color();
+    let vbase = 0;
+
+    const pushVert = (x, z, lift, u, v, alpha, shade, rut) => {
+      const y = this.heightAt(x, z) + lift;
+      pos.push(x, y, z);
+      uvs.push(u, v);
+      c.copy(dirtDark).lerp(dirtLight, shade);
+      c.multiplyScalar(1 - rut * 0.22);
+      col.push(c.r, c.g, c.b, alpha);
+    };
+
+    this.roadPaths = [];
+    const LANES = [-1, -0.55, 0.55, 1];
+    for (const link of links) {
+      const A = pois[link.a];
+      const B = pois[link.b];
+      const len = Math.hypot(B.x - A.x, B.z - A.z);
+      const nx = -(B.z - A.z) / (len || 1);
+      const nz = (B.x - A.x) / (len || 1);
+      const bend = (rng() - 0.5) * len * 0.22;
+      const mid = new THREE.Vector3((A.x + B.x) / 2 + nx * bend, 0, (A.z + B.z) / 2 + nz * bend);
+      const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(A.x, 0, A.z), mid, new THREE.Vector3(B.x, 0, B.z)
+      );
+      const steps = Math.max(10, Math.min(64, Math.round(len / 7)));
+      const width = 5.0 + rng() * 1.2;
+      let dist = 0;
+      let prev = null;
+      const centre = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const p = curve.getPoint(t);
+        const tan = curve.getTangent(t);
+        const sx = -tan.z;
+        const sz = tan.x;
+        if (prev) dist += Math.hypot(p.x - prev.x, p.z - prev.z);
+        prev = p;
+        centre.push({ x: p.x, z: p.z, d: dist });
+        // taper the ends so the track melts into the plaza
+        const taper = Math.min(1, Math.min(t, 1 - t) * 14 + 0.25);
+        const hw = (width * 0.5) * taper * (1 + Math.sin(dist * 0.11 + link.a) * 0.07);
+        for (let k = 0; k < LANES.length; k++) {
+          const u = (k / (LANES.length - 1)) * 2 - 1;
+          const edge = Math.abs(u);
+          const alpha = k === 0 || k === LANES.length - 1 ? 0 : 1;
+          const x = p.x + sx * u * hw;
+          const z = p.z + sz * u * hw;
+          const rut = Math.exp(-Math.pow((Math.abs(u) - 0.42) / 0.14, 2));
+          pushVert(x, z, 0.05 + edge * 0.04, k / (LANES.length - 1), dist / 7,
+            alpha, 0.35 + fbm(x * 0.06, z * 0.06, 2) * 0.5, rut);
+        }
+      }
+      const rowLen = LANES.length;
+      for (let i = 0; i < steps; i++) {
+        for (let k = 0; k < rowLen - 1; k++) {
+          const a = vbase + i * rowLen + k;
+          const b = a + 1;
+          const cc = a + rowLen;
+          const d = cc + 1;
+          idx.push(a, b, cc, b, d, cc);
+        }
+      }
+      vbase += (steps + 1) * rowLen;
+      this.roadPaths.push(centre);
+    }
+
+    // worn plaza at the centre of each settlement
+    for (const poi of pois) {
+      const R = poi.r * 0.46;
+      const rings = 6;
+      const segs = 48;
+      const base = vbase;
+      pushVert(poi.x, poi.z, 0.06, 0.5, 0.5, 0.9, 0.55, 0);
+      for (let r = 1; r <= rings; r++) {
+        const rr = (r / rings) * R;
+        const radial = 1 - Math.pow(r / rings, 1.7);
+        for (let a = 0; a < segs; a++) {
+          const ang = (a / segs) * Math.PI * 2;
+          const x = poi.x + Math.cos(ang) * rr * (1 + Math.sin(ang * 3) * 0.06);
+          const z = poi.z + Math.sin(ang) * rr * (1 + Math.cos(ang * 2) * 0.06);
+          // organic, blotchy worn ground instead of a clean disc
+          const patch = fbm(x * 0.075 + 3.1, z * 0.075 + 7.7, 3);
+          const alpha = r === rings ? 0 : Math.max(0, Math.min(1, (0.25 + patch * 1.15) * radial));
+          pushVert(x, z, 0.06, a / segs, r / rings,
+            alpha, 0.4 + patch * 0.5, 0);
+        }
+      }
+      for (let a = 0; a < segs; a++) {
+        const nxt = (a + 1) % segs;
+        idx.push(base, base + 1 + nxt, base + 1 + a);
+      }
+      for (let r = 1; r < rings; r++) {
+        const rowA = base + 1 + (r - 1) * segs;
+        const rowB = base + 1 + r * segs;
+        for (let a = 0; a < segs; a++) {
+          const nxt = (a + 1) % segs;
+          idx.push(rowA + a, rowB + nxt, rowB + a);
+          idx.push(rowA + a, rowA + nxt, rowB + nxt);
+        }
+      }
+      vbase += 1 + rings * segs;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+
+    const roadTex = this.groundMaps.map.clone();
+    roadTex.repeat.set(1, 1);
+    roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping;
+    roadTex.needsUpdate = true;
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: roadTex,
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      roughness: 1.0,
+      metalness: 0.0,
+      envMapIntensity: 0.5,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -6,
+    });
+    this.roads = new THREE.Mesh(geo, mat);
+    this.roads.receiveShadow = true;
+    this.roads.renderOrder = 1;
+    this.roads.frustumCulled = false;
+    this.group.add(this.roads);
   }
 
   buildGrass(rng) {

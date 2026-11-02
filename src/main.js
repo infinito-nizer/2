@@ -79,6 +79,10 @@ class Game {
         if (this.terrain.grass) this.pipeline.aoIgnore.push(this.terrain.grass);
         if (this.terrain.foliage) this.pipeline.aoIgnore.push(...this.terrain.foliage);
       }],
+      ['PAVING DIRT TRACKS', () => {
+        this.terrain.buildRoads();
+        if (this.terrain.roads) this.pipeline.aoIgnore.push(this.terrain.roads);
+      }],
       ['CONSTRUCTING SETTLEMENTS', () => { this.world = new World(this.scene, this.terrain); }],
       ['SYSTEMS ONLINE', () => {
         this.effects = new Effects(this.scene);
